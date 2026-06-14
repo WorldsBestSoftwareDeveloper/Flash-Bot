@@ -43,6 +43,25 @@ async function signAndSubmit(wallet: BrowserWallet, transactionBase64: string) {
   return submitBase(signed);
 }
 
+function logConfirmedSetup(label: string, signature: string) {
+  store.addLog("EXECUTED", `${label} confirmed`, `${signature.slice(0, 10)}...${signature.slice(-8)} · Solana mainnet`, "green");
+}
+
+function isAlreadyInitialized(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /already in use|already exists|custom program error: 0x0/i.test(message);
+}
+
+async function runSetupStep(label: string, build: () => Promise<{ transactionBase64: string }>, wallet: BrowserWallet) {
+  try {
+    const built = await build();
+    logConfirmedSetup(label, await signAndSubmit(wallet, built.transactionBase64));
+  } catch (error) {
+    if (!isAlreadyInitialized(error)) throw error;
+    store.addLog("SYSTEM", `${label} already initialized`, "Continuing with the remaining setup steps", "cyan");
+  }
+}
+
 export async function connectLiveWallet(): Promise<BrowserWallet> {
   const injected = window as typeof window & {
     solana?: BrowserWallet;
@@ -84,17 +103,16 @@ export async function setupLiveTrading() {
   let session = loadSession(owner);
   if (!session) {
     store.addLog("SYSTEM", "Approve session key setup", "Creates a 24-hour automated signer with a recoverable 0.01 SOL top-up", "purple");
-    session = (await createSession({ wallet, connection: baseConnection, validHours: 24, topUpSol: 0.01 })).session;
+    const created = await createSession({ wallet, connection: baseConnection, validHours: 24, topUpSol: 0.01 });
+    session = created.session;
+    logConfirmedSetup("Session key", created.signature);
     activateSession(session);
   }
   if (!snapshot?.basketPubkey) {
     store.addLog("SYSTEM", "Approve FlashTrade account setup", "Basket, deposit ledger, and MagicBlock delegation; no USDC moves", "purple");
-    const basket = await flash.initBasket({ owner });
-    await signAndSubmit(wallet, basket.transactionBase64);
-    const ledger = await flash.initDepositLedger({ owner });
-    await signAndSubmit(wallet, ledger.transactionBase64);
-    const delegation = await flash.delegateBasket({ payer: owner, owner });
-    await signAndSubmit(wallet, delegation.transactionBase64);
+    await runSetupStep("FlashTrade basket", () => flash.initBasket({ owner }), wallet);
+    await runSetupStep("Deposit ledger", () => flash.initDepositLedger({ owner }), wallet);
+    await runSetupStep("MagicBlock delegation", () => flash.delegateBasket({ payer: owner, owner }), wallet);
     snapshot = await flash.owner(owner).catch(() => null);
   }
   store.setLiveReadiness(true, Boolean(snapshot?.basketPubkey), snapshot?.basketPubkey ? "Live ready; deposit USDC separately if unfunded" : "Setup incomplete");
