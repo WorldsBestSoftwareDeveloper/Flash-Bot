@@ -1,10 +1,9 @@
-import { FlashV2Client } from "flash-v2";
+import { flash } from "./flashClient";
 import type { MarketSnapshot } from "./types";
 
 let tick = 0;
 let solPrice = 146.82;
 let btcPrice = 104620;
-const flash = new FlashV2Client();
 const liveHistory: Array<{ timestamp: number; sol: number; btc: number }> = [];
 
 export function getMarketData(previous?: MarketSnapshot): MarketSnapshot {

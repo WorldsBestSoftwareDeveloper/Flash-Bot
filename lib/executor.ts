@@ -1,9 +1,9 @@
-import { FlashV2Client, type BasketSnapshot, type ClosePositionRequest, type OpenPositionRequest } from "flash-v2";
+import type { BasketSnapshot, ClosePositionRequest, OpenPositionRequest } from "flash-v2";
+import { flash } from "./flashClient";
 import { calculateHedgeSize } from "./hedger";
 import { store } from "./store";
 import type { Asset, Position, Side, Trade, TradingSignal } from "./types";
 
-const flash = new FlashV2Client();
 const MAX_LIVE_COLLATERAL_USD = 100;
 
 export interface SessionExecutionContext {

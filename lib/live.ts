@@ -1,8 +1,9 @@
 "use client";
 
 import { Connection, PublicKey, type Transaction, type VersionedTransaction } from "@solana/web3.js";
-import { decodeTransaction, FlashV2Client, signAndSend, type BasketSnapshot } from "flash-v2";
+import { decodeTransaction, signAndSend, type BasketSnapshot } from "flash-v2";
 import { configureLiveSession, syncLivePositions } from "./executor";
+import { flash } from "./flashClient";
 import { store } from "./store";
 import { createSession, loadSession, revokeSession, type LoadedSession, type SessionWallet } from "./session";
 
@@ -11,7 +12,6 @@ export interface BrowserWallet extends SessionWallet {
   isPhantom?: boolean;
 }
 
-export const flash = new FlashV2Client();
 export const baseConnection = new Connection(flash.network.baseRpc, "confirmed");
 let activeSession: LoadedSession | null = null;
 let activeWallet: BrowserWallet | null = null;
