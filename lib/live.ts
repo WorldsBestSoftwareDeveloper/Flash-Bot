@@ -53,14 +53,44 @@ function isAlreadyInitialized(error: unknown) {
   return /already in use|already exists|custom program error: 0x0/i.test(message);
 }
 
+function isStaleBlockhash(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /blockhash not found|block height exceeded|transaction expired/i.test(message);
+}
+
 async function runSetupStep(label: string, build: () => Promise<{ transactionBase64: string }>, wallet: BrowserWallet) {
-  try {
-    const built = await build();
-    logConfirmedSetup(label, await signAndSubmit(wallet, built.transactionBase64));
-  } catch (error) {
-    if (!isAlreadyInitialized(error)) throw error;
-    store.addLog("SYSTEM", `${label} already initialized`, "Continuing with the remaining setup steps", "cyan");
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const built = await build();
+      logConfirmedSetup(label, await signAndSubmit(wallet, built.transactionBase64));
+      return;
+    } catch (error) {
+      if (isAlreadyInitialized(error)) {
+        store.addLog("SYSTEM", `${label} already initialized`, "Continuing with the remaining setup steps", "cyan");
+        return;
+      }
+      if (attempt === 1 && isStaleBlockhash(error)) {
+        store.addLog("WARNING", `${label} approval expired`, "Rebuilding with a fresh blockhash; approve the replacement transaction promptly", "purple");
+        continue;
+      }
+      throw error;
+    }
   }
+}
+
+async function createFreshSession(wallet: BrowserWallet) {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      return await createSession({ wallet, connection: baseConnection, validHours: 24, topUpSol: 0.01 });
+    } catch (error) {
+      if (attempt === 1 && isStaleBlockhash(error)) {
+        store.addLog("WARNING", "Session approval expired", "Rebuilding with a fresh blockhash; approve the replacement transaction promptly", "purple");
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error("Session setup could not obtain a fresh blockhash");
 }
 
 export async function connectLiveWallet(): Promise<BrowserWallet> {
@@ -105,7 +135,7 @@ export async function setupLiveTrading() {
   let session = loadSession(owner);
   if (!session) {
     store.addLog("SYSTEM", "Approve session key setup", "Creates a 24-hour automated signer with a recoverable 0.01 SOL top-up", "purple");
-    const created = await createSession({ wallet, connection: baseConnection, validHours: 24, topUpSol: 0.01 });
+    const created = await createFreshSession(wallet);
     session = created.session;
     logConfirmedSetup("Session key", created.signature);
     activateSession(session);
