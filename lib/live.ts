@@ -17,6 +17,21 @@ let activeSession: LoadedSession | null = null;
 let activeWallet: BrowserWallet | null = null;
 let syncTimer: ReturnType<typeof setInterval> | null = null;
 
+async function assertBaseRpcReady() {
+  try {
+    await baseConnection.getLatestBlockhash("confirmed");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/403|forbidden/i.test(message)) {
+      throw new Error("Base RPC rejected the request (403). Verify the Helius API key and allow this site origin, including http://localhost:3000 for local testing");
+    }
+    if (/401|unauthorized/i.test(message)) {
+      throw new Error("Base RPC rejected the API key (401). Replace NEXT_PUBLIC_BASE_RPC with an active Solana mainnet RPC URL");
+    }
+    throw new Error(`Base RPC is unavailable: ${message}`);
+  }
+}
+
 async function submitBase(tx: Transaction | VersionedTransaction) {
   const signature = await baseConnection.sendRawTransaction(tx.serialize(), { maxRetries: 3 });
   await baseConnection.confirmTransaction(signature, "confirmed");
@@ -63,6 +78,7 @@ function activateSession(session: LoadedSession) {
 export async function setupLiveTrading() {
   const wallet = activeWallet;
   if (!wallet) throw new Error("Connect a Solana wallet first");
+  await assertBaseRpcReady();
   const owner = wallet.publicKey.toBase58();
   let snapshot: BasketSnapshot | null = await flash.owner(owner).catch(() => null);
   let session = loadSession(owner);
