@@ -5,7 +5,7 @@ import { decodeTransaction, signAndSend, type BasketSnapshot } from "flash-v2";
 import { configureLiveSession, syncLivePositions } from "./executor";
 import { flash } from "./flashClient";
 import { store } from "./store";
-import { createSession, loadSession, revokeSession, type LoadedSession, type SessionWallet } from "./session";
+import { clearLocalSession, createSession, loadSession, revokeSession, type LoadedSession, type SessionWallet } from "./session";
 
 export interface BrowserWallet extends SessionWallet {
   connect(): Promise<{ publicKey: PublicKey }>;
@@ -16,6 +16,7 @@ export const baseConnection = new Connection(flash.network.baseRpc, "confirmed")
 let activeSession: LoadedSession | null = null;
 let activeWallet: BrowserWallet | null = null;
 let syncTimer: ReturnType<typeof setInterval> | null = null;
+const setupKey = (owner: string) => `flash-bot-live-setup:${owner}`;
 
 async function assertBaseRpcReady() {
   try {
@@ -79,7 +80,8 @@ export async function connectLiveWallet(): Promise<BrowserWallet> {
   const session = loadSession(owner);
   if (session) activateSession(session);
   const snapshot = await flash.owner(owner).catch(() => null);
-  store.setLiveReadiness(Boolean(session), Boolean(snapshot?.basketPubkey), session && snapshot?.basketPubkey ? "Live execution ready" : "Run live setup");
+  const setupComplete = window.localStorage.getItem(setupKey(owner)) === "complete";
+  store.setLiveReadiness(Boolean(session), Boolean(snapshot?.basketPubkey) && setupComplete, session && snapshot?.basketPubkey && setupComplete ? "Live execution ready" : "Run live setup");
   startOwnerSync(owner);
   return wallet;
 }
@@ -108,20 +110,34 @@ export async function setupLiveTrading() {
     logConfirmedSetup("Session key", created.signature);
     activateSession(session);
   }
-  if (!snapshot?.basketPubkey) {
-    store.addLog("SYSTEM", "Approve FlashTrade account setup", "Basket, deposit ledger, and MagicBlock delegation; no USDC moves", "purple");
-    await runSetupStep("FlashTrade basket", () => flash.initBasket({ owner }), wallet);
-    await runSetupStep("Deposit ledger", () => flash.initDepositLedger({ owner }), wallet);
-    await runSetupStep("MagicBlock delegation", () => flash.delegateBasket({ payer: owner, owner }), wallet);
-    snapshot = await flash.owner(owner).catch(() => null);
-  }
+  store.addLog("SYSTEM", "Approve FlashTrade account setup", "Basket, deposit ledger, and MagicBlock delegation; completed steps are safely skipped", "purple");
+  await runSetupStep("FlashTrade basket", () => flash.initBasket({ owner }), wallet);
+  await runSetupStep("Deposit ledger", () => flash.initDepositLedger({ owner }), wallet);
+  await runSetupStep("MagicBlock delegation", () => flash.delegateBasket({ payer: owner, owner }), wallet);
+  snapshot = await flash.owner(owner).catch(() => null);
+  if (snapshot?.basketPubkey) window.localStorage.setItem(setupKey(owner), "complete");
   store.setLiveReadiness(true, Boolean(snapshot?.basketPubkey), snapshot?.basketPubkey ? "Live ready; deposit USDC separately if unfunded" : "Setup incomplete");
   store.addLog("SYSTEM", "Live execution activated", "Session key and FlashTrade basket are ready", "green");
   startOwnerSync(owner);
 }
 
 export async function disableLiveTrading() {
-  if (activeSession) await revokeSession(activeSession, baseConnection);
+  if (activeSession) {
+    try {
+      await revokeSession(activeSession, baseConnection);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/ConstraintHasOne|0x7d1|has one constraint/i.test(message)) {
+        clearLocalSession();
+        activeSession = null;
+        configureLiveSession(null);
+        store.setLiveReadiness(false, store.getSnapshot().basketReady, "Invalid stored session removed; run Live Setup again");
+        store.addLog("WARNING", "Invalid local session removed", "The mismatched session cannot control this wallet; create a new session with Setup Live", "purple");
+        return;
+      }
+      throw error;
+    }
+  }
   activeSession = null;
   configureLiveSession(null);
   store.setLiveReadiness(false, store.getSnapshot().basketReady, "Session revoked; live automation disabled");

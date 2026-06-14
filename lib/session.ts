@@ -20,8 +20,21 @@ export function loadSession(authority: string): LoadedSession | null {
   try {
     const stored = JSON.parse(raw) as StoredSession;
     if (stored.authority !== authority || stored.validUntil < Date.now() / 1000 + 60) return null;
-    return { ...stored, keypair: Keypair.fromSecretKey(Uint8Array.from(stored.secretKey)) };
+    const keypair = Keypair.fromSecretKey(Uint8Array.from(stored.secretKey));
+    const [expectedToken] = PublicKey.findProgramAddressSync(
+      [new TextEncoder().encode("session_token_v2"), MAGIC_TRADE_PROGRAM.toBytes(), keypair.publicKey.toBytes(), new PublicKey(authority).toBytes()],
+      SESSION_KEYS_PROGRAM,
+    );
+    if (expectedToken.toBase58() !== stored.token) {
+      window.localStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+    return { ...stored, keypair };
   } catch { return null; }
+}
+
+export function clearLocalSession() {
+  if (typeof window !== "undefined") window.localStorage.removeItem(STORAGE_KEY);
 }
 
 async function confirm(connection: Connection, signature: string) {

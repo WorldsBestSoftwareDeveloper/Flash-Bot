@@ -146,7 +146,7 @@ export function TradingDashboard() {
             <button className={state.mode === "live" ? "active live" : ""} onClick={() => store.setMode("live")}>LIVE</button>
           </div>
           <button className="wallet-button" onClick={() => void connectWallet()}><Wallet size={15} />{state.walletAddress ?? "CONNECT WALLET"}</button>
-          {state.walletAddress && !state.sessionReady ? <button className="wallet-button setup-button" onClick={() => void activateLive()}><ShieldCheck size={15} />SETUP LIVE</button> : null}
+          {state.walletAddress && !(state.sessionReady && state.basketReady) ? <button className="wallet-button setup-button" onClick={() => void activateLive()}><ShieldCheck size={15} />SETUP LIVE</button> : null}
           {state.sessionReady ? <button className="wallet-button revoke-button" onClick={() => void revokeLive()}>REVOKE SESSION</button> : null}
           <button className={`agent-button ${state.agentActive ? "stop" : ""}`} onClick={() => store.setAgentActive(!state.agentActive)}>
             {state.agentActive ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
