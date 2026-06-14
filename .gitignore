@@ -1,0 +1,15 @@
+node_modules
+.next
+.vercel
+*.log
+*.tsbuildinfo
+
+.env*
+!.env.example
+
+.reference
+
+.DS_Store
+Thumbs.db
+.idea
+.vscode
