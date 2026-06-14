@@ -17,6 +17,7 @@ let activeSession: LoadedSession | null = null;
 let activeWallet: BrowserWallet | null = null;
 let syncTimer: ReturnType<typeof setInterval> | null = null;
 const setupKey = (owner: string) => `flash-bot-live-setup:${owner}`;
+const MIN_SETUP_SOL = 0.03;
 
 async function assertBaseRpcReady() {
   try {
@@ -131,6 +132,10 @@ export async function setupLiveTrading() {
   if (!wallet) throw new Error("Connect a Solana wallet first");
   await assertBaseRpcReady();
   const owner = wallet.publicKey.toBase58();
+  const solBalance = await baseConnection.getBalance(wallet.publicKey) / 1e9;
+  if (solBalance < MIN_SETUP_SOL) {
+    throw new Error(`Insufficient SOL for setup: wallet has ${solBalance.toFixed(5)} SOL; fund at least ${MIN_SETUP_SOL.toFixed(2)} SOL before retrying`);
+  }
   let snapshot: BasketSnapshot | null = await flash.owner(owner).catch(() => null);
   let session = loadSession(owner);
   if (!session) {
